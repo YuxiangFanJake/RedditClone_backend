@@ -3,6 +3,7 @@ const mysql = require('mysql');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 
 const app = express();
 const port = 3000;
@@ -24,9 +25,12 @@ db.connect(err => {
 
 // Middleware
 app.use(bodyParser.json());
+// Enable CORS for all routes and origins. @TODO this needs to be changed later for security concerns
+app.use(cors());
+
 
 // Signup Endpoint
-app.post('/signup', async (req, res) => {
+app.post('/api/v1/signup', async (req, res) => {
   const { username, email, password } = req.body;
   if (!(email && password && username)) {
     res.status(400).send("All input is required");
@@ -38,15 +42,16 @@ app.post('/signup', async (req, res) => {
   const sql = 'INSERT INTO users (username, email, password) VALUES (?, ?, ?)';
   db.query(sql, [username, email, hashedPassword], (err, result) => {
     if (err) {
-      res.status(500).send('Database error: ' + err.message);
+      res.status(500).json({message : 'Database error: ' + err.message});
     } else {
-      res.status(201).send("User created successfully");
+      res.status(201).json({message: 'User created successfully'});
     }
   });
 });
 
+
 // Login Endpoint
-app.post('/login', (req, res) => {
+app.post('/api/v1/login', (req, res) => {
   const { email, password } = req.body;
 
   const sql = 'SELECT * FROM users WHERE email = ?';
@@ -56,16 +61,38 @@ app.post('/login', (req, res) => {
     } else if (result.length > 0) {
       const user = result[0];
       if (await bcrypt.compare(password, user.password)) {
-        const token = jwt.sign({ user_id: user.id, email }, secretKey, { expiresIn: '2h' });
-        res.status(200).json({ token });
+        //const token = jwt.sign({ user_id: user.id, email }, secretKey, { expiresIn: '2h' });
+        const userName = user.username
+        res.status(200).json({ userName });
       } else {
-        res.status(400).send("Invalid Credentials");
+        res.status(400).json({ message: 'Invalid credentials' });
       }
     } else {
-      res.status(404).send("User not found");
+        res.status(404).json({ message: 'User not found' });
     }
   });
 });
+
+
+// Define the GET endpoint
+app.get('/api/v1/search-subreddit', (req, res) => {
+    const { name } = req.query;  // Get the search term from query parameters
+    if (!name) {
+        return res.status(400).json({ error: 'Name parameter is required' });
+    }
+
+    // SQL query to find similar subreddit names
+    const query = "SELECT name FROM subreddit WHERE name LIKE ?";
+
+    db.query(query, [`%${name}%`], (err, results) => {
+        if (err) {
+            console.error('Error executing the query:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+        res.json(results);
+    });
+});
+
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
