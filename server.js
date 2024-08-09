@@ -28,6 +28,7 @@ app.use(bodyParser.json());
 // Enable CORS for all routes and origins. @TODO this needs to be changed later for security concerns
 app.use(cors());
 
+// User Management Module
 
 // Signup Endpoint
 app.post('/api/v1/signup', async (req, res) => {
@@ -73,7 +74,31 @@ app.post('/api/v1/login', (req, res) => {
   });
 });
 
+// Define the GET endpoint to fetch a user's name by ID
+app.get('/api/v1/user-name', (req, res) => {
+    const { id } = req.query;  // Get the user ID from query parameters
+    if (!id) {
+        return res.status(400).json({ error: 'ID parameter is required' });
+    }
 
+    // SQL query to find the user's name by ID
+    const query = "SELECT username FROM users WHERE id = ?";
+
+    db.query(query, [id], (err, results) => {
+        if (err) {
+            console.error('Error executing the query:', err);
+            return res.status(500).json({ error: 'Internal server error' });
+        }
+        if (results.length > 0) {
+            res.json(results[0]);
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    });
+});
+
+
+//Content Management Module
 // Define the GET endpoint
 app.get('/api/v1/search-subreddit', (req, res) => {
     const { name } = req.query;  // Get the search term from query parameters
@@ -180,7 +205,8 @@ app.get('/api/v1/fetch-subreddit', (req, res) => {
             comment.id AS comment_id,
             comment.content AS comment_content,
             comment.vote AS comment_vote,
-            comment.author AS comment_author
+            comment.author AS comment_author,
+            (SELECT COUNT(*) FROM comment WHERE comment.post_id = post.id) AS comment_count
         FROM post
         LEFT JOIN comment ON comment.post_id = post.id
         WHERE post.id = ?;
@@ -213,6 +239,9 @@ app.post('/api/v1/new-comment', async (req, res) => {
   });
 
 
+  //Communication Module 
+  //Marketplace Module
+  //Search Module
 
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
