@@ -100,14 +100,14 @@ app.get('/api/v1/user-name', (req, res) => {
 
 //Content Management Module
 // Define the GET endpoint
-app.get('/api/v1/search-subreddit', (req, res) => {
+app.get('/api/v1/search-communities', (req, res) => {
     const { name } = req.query;  // Get the search term from query parameters
     if (!name) {
         return res.status(400).json({ error: 'Name parameter is required' });
     }
 
-    // SQL query to find similar subreddit names
-    const query = "SELECT name FROM subreddit WHERE name LIKE ?";
+    // SQL query to find similar communities names
+    const query = "SELECT name FROM communities WHERE name LIKE ?";
 
     db.query(query, [`%${name}%`], (err, results) => {
         if (err) {
@@ -125,7 +125,7 @@ app.post('/api/v1/new-community', async (req, res) => {
       res.status(400).json("All input is required");
     }
     
-    const sql = 'INSERT INTO subreddit (name, community_type, is_adult_content) VALUES (?, ?, ?)';
+    const sql = 'INSERT INTO communities (name, community_type, is_adult_content) VALUES (?, ?, ?)';
     db.query(sql, [name, community_type, is_NSFW], (err, result) => {
       if (err) {
         res.status(500).json({message : 'Database error: ' + err.message});
@@ -153,18 +153,18 @@ app.post('/api/v1/new-post', async (req, res) => {
     });
   });
 
-  // get endpoint to fetch data based on subreddit name
-app.get('/api/v1/fetch-subreddit', (req, res) => {
-    const { subredditName } = req.query;  // Get the search term from query parameters
-    if (!subredditName) {
+  // get endpoint to fetch data based on communities name
+app.get('/api/v1/fetch-communities', (req, res) => {
+    const { communitiesName } = req.query;  // Get the search term from query parameters
+    if (!communitiesName) {
         res.status(400).json("All input is required");
     }
     const sql = `
     SELECT 
-        subreddit.id AS subreddit_id,
-        subreddit.name AS subreddit_name,
-        subreddit.community_type AS subreddit_type,
-        subreddit.is_adult_content AS subreddit_adult_content,
+        communities.id AS communities_id,
+        communities.name AS communities_name,
+        communities.community_type AS communities_type,
+        communities.is_adult_content AS communities_adult_content,
         post.id AS post_id,
         post.subject AS post_subject,
         post.content AS post_content,
@@ -172,14 +172,14 @@ app.get('/api/v1/fetch-subreddit', (req, res) => {
         post.author AS post_author,
         (SELECT COUNT(*) FROM comment WHERE comment.post_id = post.id) AS comment_count
     FROM 
-        subreddit
+        communities
     JOIN 
-        post ON post.community = subreddit.name
+        post ON post.community = communities.name
     WHERE 
-        subreddit.name = ?;
+        communities.name = ?;
     `;
   
-    db.query(sql, [subredditName], (error, results) => {
+    db.query(sql, [communitiesName], (error, results) => {
       if (error) {
         console.error(error);
         return res.status(500).json({ error: 'Internal server error' });

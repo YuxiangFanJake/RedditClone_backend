@@ -1,6 +1,6 @@
 --create subreddit table
 
-CREATE TABLE subreddit (
+CREATE TABLE communities (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(255) NOT NULL UNIQUE,
   community_type NOT NULL VARCHAR(255), 
