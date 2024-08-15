@@ -1,5 +1,5 @@
 -- UserCommunity Relationship Table
-CREATE TABLE user_community (
+CREATE TABLE user_community_subscription (
     user_id INT,
     community_id INT,
     joined_at TIMESTAMP,
