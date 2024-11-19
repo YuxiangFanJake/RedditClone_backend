@@ -37,13 +37,20 @@ io.on('connection', async(socket) => {
         try {
             const messages = await Message.find({
                 $or: [
-                    { toUserId: toId },
-                    { fromUserId: toId }
+                    // Either messages from fromId to toId
+                    { $and: [
+                        { fromUserId: fromId },
+                        { toUserId: toId }
+                    ]},
+                    // Or messages from toId to fromId
+                    { $and: [
+                        { fromUserId: toId },
+                        { toUserId: fromId }
+                    ]}
                 ]})
                 .sort({ timestamp: -1 })
                 .limit(50)
                 .exec(); // Note that we are awaiting the promise here
-
 
             socket.emit('loadOldMessages', messages.reverse());
         } catch (err) {
