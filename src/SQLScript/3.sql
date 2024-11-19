@@ -6,8 +6,9 @@ CREATE TABLE posts (
   content TEXT,
   vote INT DEFAULT 0,
   author VARCHAR(255),
+  community VARCHAR(255),
   FOREIGN KEY (author) REFERENCES users(username),
-  FOREIGN KEY (communities) REFERENCES (name)
+  FOREIGN KEY (community) REFERENCES communities(name)
 );
 
 CREATE TABLE comments (
@@ -16,5 +17,5 @@ CREATE TABLE comments (
   vote INT DEFAULT 0,
   author VARCHAR(255),
   post_id INT,
-  FOREIGN KEY (post_id) REFERENCES post(id)
+  FOREIGN KEY (post_id) REFERENCES posts(id)
 );

@@ -14,7 +14,7 @@ const pool = mysql.createPool({
     host: 'localhost',
     user: 'newuser',
     password: '1',
-    database: 'RedditClone',
+    database: 'reddit',
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -91,11 +91,31 @@ app.get('/api/v1/user-name', async (req, res) => {
     }
 });
 
+app.get('/api/v1/user-name', async (req, res) => {
+    const { id } = req.query;  // Get the user ID from query parameters
+    if (!id) {
+        return res.status(400).json({ error: 'ID parameter is required' });
+    }
+
+    const query = "SELECT username FROM users WHERE id = ?";
+    try {
+        const [results] = await pool.query(query, [id]);
+        if (results.length > 0) {
+            res.json(results[0]);
+        } else {
+            res.status(404).json({ error: 'User not found' });
+        }
+    } catch (error) {
+        console.error('Error executing the query:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 // Join Community Endpoint
 app.post('/api/v1/join-community', async (req, res) => {
-    const { userId, communityId } = req.body;
-    if (!userId || !communityId) {
-        return res.status(400).json({ error: 'Both userId and communityId are required' });
+    const { username, communityName } = req.body;
+    if (!username || !communityName) {
+        return res.status(400).json({ error: 'Both username and communityName are required' });
     }
 
     try {
@@ -104,8 +124,8 @@ app.post('/api/v1/join-community', async (req, res) => {
         await connection.beginTransaction();
 
         // Check if the user is already associated with the community
-        const checkExistenceQuery = 'SELECT status FROM user_community_subscription WHERE user_id = ? AND community_id = ?';
-        const [results] = await connection.query(checkExistenceQuery, [userId, communityId]);
+        const checkExistenceQuery = 'SELECT status FROM user_community_subscription WHERE username = ? AND community_name = ?';
+        const [results] = await connection.query(checkExistenceQuery, [username, communityName]);
 
         if (results.length > 0) {
             const currentUserStatus = results[0].status;
@@ -114,8 +134,8 @@ app.post('/api/v1/join-community', async (req, res) => {
                 return res.status(409).json({ message: 'User already an active member of this community' });
             } else {
                 // User is inactive, reactivate the membership
-                const reactivateQuery = 'UPDATE user_community_subscription SET status = "active", timestamp = NOW() WHERE user_id = ? AND community_id = ?';
-                await connection.query(reactivateQuery, [userId, communityId]);
+                const reactivateQuery = 'UPDATE user_community_subscription SET status = "active", timestamp = NOW() WHERE username = ? AND community_name = ?';
+                await connection.query(reactivateQuery, [username, communityName]);
                 await connection.commit();
                 connection.release();
                 return res.status(200).json({ message: 'Successfully reactivated membership in the community' });
@@ -123,8 +143,8 @@ app.post('/api/v1/join-community', async (req, res) => {
         }
 
         // If no existing record, insert a new one
-        const joinQuery = 'INSERT INTO user_community_subscription (user_id, community_id, status, timestamp) VALUES (?, ?, "active", NOW())';
-        await connection.query(joinQuery, [userId, communityId]);
+        const joinQuery = 'INSERT INTO user_community_subscription (username, community_name, status, timestamp) VALUES (?, ?, "active", NOW())';
+        await connection.query(joinQuery, [username, communityName]);
         await connection.commit();
         connection.release();
         res.status(201).json({ message: 'Successfully joined the community' });
@@ -154,7 +174,7 @@ app.post('/api/v1/leave-community', async (req, res) => {
 
         // Check if the user is currently a member of the community
         const [exists] = await connection.query(
-            'SELECT 1 FROM user_community_subscription WHERE user_id = ? AND community_id = ? AND status = "active"',
+            'SELECT 1 FROM user_community_subscription WHERE username = ? AND community_name = ? AND status = "active"',
             [userId, communityId]
         );
 
@@ -165,7 +185,7 @@ app.post('/api/v1/leave-community', async (req, res) => {
 
         // Update the user's status to 'inactive'
         await connection.query(
-            'UPDATE user_community_subscription SET status = "inactive", timestamp = NOW() WHERE user_id = ? AND community_id = ?',
+            'UPDATE user_community_subscription SET status = "inactive", timestamp = NOW() WHERE username = ? AND community_name = ?',
             [userId, communityId]
         );
 
@@ -180,21 +200,28 @@ app.post('/api/v1/leave-community', async (req, res) => {
 
 //Content Management Module
 // Define the GET endpoint
-app.get('/api/v1/search-communities', (req, res) => {
+app.get('/api/v1/search-communities', async(req, res) => {
     const { name } = req.query;  // Get the search term from query parameters
     if (!name) {
         return res.status(400).json({ error: 'Name parameter is required' });
     }
+    const connection = await pool.getConnection();
 
-    // SQL query to find similar communities names
     const query = "SELECT name FROM communities WHERE name LIKE ?";
-    db.query(query, [`%${name}%`], (err, results) => {
-        if (err) {
-            console.error('Error executing the query:', err);
-            return res.status(500).json({ error: 'Internal server error' });
-        }
-        res.json(results);
-    });
+    try {
+        // Construct and execute the search queries
+        const [communities] = await connection.query(query, [`%${name}%`]
+        );
+        // Close the database connection
+        connection.release();
+
+        // Send combined search results
+        res.json({communities});
+    } catch (error) {
+        console.error('Failed to execute search:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+
 });
 
 // new community
@@ -204,16 +231,38 @@ app.post('/api/v1/new-community', async (req, res) => {
       res.status(400).json("All input is required");
     }
     
-    const sql = 'INSERT INTO communities (name, community_type, is_adult_content) VALUES (?, ?, ?)';
-    db.query(sql, [name, community_type, is_NSFW], (err, result) => {
-      if (err) {
-        res.status(500).json({message : 'Database error: ' + err.message});
-      } else {
-        res.status(201).json({message: 'new community created successfully'});
-      }
-    });
+    const connection = await pool.getConnection();
+    const query = 'INSERT INTO communities (name, community_type, is_adult_content) VALUES (?, ?, ?)';
+    try {
+        // Construct and execute the search queries
+        await connection.query(query, [name, community_type, is_NSFW]);
+        // Close the database connection
+        connection.release();
+
+        // Send combined search results
+        res.json('new community created successfully');
+    } catch (error) {
+        console.error('Failed to execute search:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
+
+//Find subscribed communities
+app.get('/api/v1/community/subscription', async (req, res) => {
+    const { username } = req.query;
+    try {
+        let query = `SELECT name FROM communities
+        JOIN user_community_subscription ON communities.name = user_community_subscription.community_name
+        WHERE user_community_subscription.username = ?`;
+
+        const [community_subscription] = await pool.query(query, username);
+        res.json(community_subscription);
+    } catch (error) {
+        console.error('Failed to retrieve community subscription:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
 
 // new post
 app.post('/api/v1/new-post', async (req, res) => {
@@ -221,19 +270,25 @@ app.post('/api/v1/new-post', async (req, res) => {
     if (!(subject && author && content && community)) {
       return res.status(400).json("All input is required");
     }
-    
-    const sql = 'INSERT INTO posts (subject, content, author, community) VALUES (?, ?, ?, ?)';
-    db.query(sql, [subject, content, author, community], (err, result) => {
-      if (err) {
-        res.status(500).json({message : 'Database error: ' + err.message});
-      } else {
-        res.status(201).json({message: 'new post created successfully'});
-      }
-    });
+
+    const connection = await pool.getConnection();
+    const query = 'INSERT INTO posts (subject, content, author, community) VALUES (?, ?, ?, ?)';
+    try {
+        // Construct and execute the search queries
+        await connection.query(query, [subject, content, author, community]);
+        // Close the database connection
+        connection.release();
+
+        // Send combined search results
+        res.json('new post created successfully');
+    } catch (error) {
+        console.error('Failed to execute search:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   // get endpoint to fetch data based on communities name
-app.get('/api/v1/fetch-communities', (req, res) => {
+app.get('/api/v1/fetch-communities', async(req, res) => {
     const { communitiesName } = req.query;  // Get the search term from query parameters
     if (!communitiesName) {
         res.status(400).json("All input is required");
@@ -258,17 +313,17 @@ app.get('/api/v1/fetch-communities', (req, res) => {
         communities.name = ?;
     `;
   
-    db.query(sql, [communitiesName], (error, results) => {
-      if (error) {
+    try {
+        const [results] = await pool.query(sql, [communitiesName]);
+        res.json(results);
+    } catch (error) {
         console.error(error);
-        return res.status(500).json({ error: 'Internal server error' });
-      }
-      res.json(results);
-    });
+        res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
 // get endpoint to fetch data based on post id
-app.get('/api/v1/fetch-post', (req, res) => {
+app.get('/api/v1/fetch-post',async(req, res) => {
     const { postId } = req.query;  // Get the search term from query parameters
     if (!postId) {
         res.status(400).json("All input is required");
@@ -290,14 +345,13 @@ app.get('/api/v1/fetch-post', (req, res) => {
         LEFT JOIN comments ON comments.post_id = posts.id
         WHERE posts.id = ?;
     `;
-  
-    db.query(sql, [postId], (error, results) => {
-      if (error) {
+    try {
+        const [results] = await pool.query(sql, [postId]);
+        res.json(results);
+    } catch (error) {
         console.error(error);
-        return res.status(500).json({ error: 'Internal server error' });
-      }
-      res.json(results);
-    });
+        res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
 // new comments
@@ -307,19 +361,64 @@ app.post('/api/v1/new-comments', async (req, res) => {
       return res.status(400).json("All input is required");
     }
     
-    const sql = 'INSERT INTO comments (content, author, post_id) VALUES (?, ?, ?)';
-    db.query(sql, [content, author, post_id], (err, result) => {
-      if (err) {
-        res.status(500).json({message : 'Database error: ' + err.message});
-      } else {
-        res.status(201).json({message: 'new comments created successfully'});
-      }
-    });
+    const connection = await pool.getConnection();
+    const query = 'INSERT INTO comments (content, author, post_id) VALUES (?, ?, ?)';
+    try {
+        // Construct and execute the search queries
+        await connection.query(query, [content, author, post_id],);
+        // Close the database connection
+        connection.release();
+
+        // Send combined search results
+        res.json('new comments created successfully');
+    } catch (error) {
+        console.error('Failed to execute search:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+
   });
 
 
 //Communication Module 
 //Marketplace Module
+// POST /marketplace/listings to create new product listings
+app.post('/api/v1/marketplace/listings', async (req, res) => {
+    const { name, description, userId, price } = req.body;
+    if (!name || !description || !price || !userId) {
+        return res.status(400).json({ message: 'name, description, userId and price are required' });
+    }
+
+    try {
+        const [result] = await pool.query(
+            'INSERT INTO listings (name, description, price, username) VALUES (?, ?, ?, ?)',
+            [name, description, price, userId]
+        );
+        res.status(201).json({ id: result.insertId, name, description, price, userId });
+    } catch (error) {
+        console.error('Failed to create listing:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
+
+// GET /marketplace/listings to browse and search listings
+app.get('/api/v1/marketplace/listings', async (req, res) => {
+    const { search } = req.query;
+    try {
+        let query = 'SELECT * FROM listings';
+        const params = [];
+
+        if (search) {
+            query += ' WHERE name LIKE ? OR description LIKE ?';
+            params.push(`%${search}%`, `%${search}%`);
+        }
+
+        const [listings] = await pool.query(query, params);
+        res.json(listings);
+    } catch (error) {
+        console.error('Failed to retrieve listings:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+});
 
 //Search Module
 app.get('/api/v1/search', async (req, res) => {
@@ -374,7 +473,7 @@ JOIN
 JOIN 
     user_community_subscription uc ON c.id = uc.community_id -- Joining communities to user subscriptions
 JOIN 
-    users u ON uc.user_id = u.id -- Joining users to user subscriptions
+    users u ON uc.username = u.username -- Joining users to user subscriptions
 WHERE 
     u.id = 1
 	AND uc.status = 'active'; -- Ensuring the user's subscription is active
@@ -404,6 +503,8 @@ app.get('/api/v1/home-feed', async (req, res) => {
         res.status(500).json({ error: 'Internal server error' });
     }
 });
+
+
 
 // Listen to server
 app.listen(port, () => {
