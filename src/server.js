@@ -117,10 +117,9 @@ app.post('/api/v1/join-community', async (req, res) => {
     if (!username || !communityName) {
         return res.status(400).json({ error: 'Both username and communityName are required' });
     }
-
+    const connection = await pool.getConnection();
     try {
         // Start a transaction to ensure data integrity
-        const connection = await pool.getConnection();
         await connection.beginTransaction();
 
         // Check if the user is already associated with the community
@@ -134,7 +133,7 @@ app.post('/api/v1/join-community', async (req, res) => {
                 return res.status(409).json({ message: 'User already an active member of this community' });
             } else {
                 // User is inactive, reactivate the membership
-                const reactivateQuery = 'UPDATE user_community_subscription SET status = "active", timestamp = NOW() WHERE username = ? AND community_name = ?';
+                const reactivateQuery = 'UPDATE user_community_subscription SET status = "active", joined_at = NOW() WHERE username = ? AND community_name = ?';
                 await connection.query(reactivateQuery, [username, communityName]);
                 await connection.commit();
                 connection.release();
@@ -143,7 +142,7 @@ app.post('/api/v1/join-community', async (req, res) => {
         }
 
         // If no existing record, insert a new one
-        const joinQuery = 'INSERT INTO user_community_subscription (username, community_name, status, timestamp) VALUES (?, ?, "active", NOW())';
+        const joinQuery = 'INSERT INTO user_community_subscription (username, community_name, status, joined_at) VALUES (?, ?, "active", NOW())';
         await connection.query(joinQuery, [username, communityName]);
         await connection.commit();
         connection.release();
@@ -185,7 +184,7 @@ app.post('/api/v1/leave-community', async (req, res) => {
 
         // Update the user's status to 'inactive'
         await connection.query(
-            'UPDATE user_community_subscription SET status = "inactive", timestamp = NOW() WHERE username = ? AND community_name = ?',
+            'UPDATE user_community_subscription SET status = "inactive", left_at = NOW() WHERE username = ? AND community_name = ?',
             [userId, communityId]
         );
 
