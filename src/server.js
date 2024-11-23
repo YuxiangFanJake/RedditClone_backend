@@ -253,7 +253,7 @@ app.get('/api/v1/community/subscription', async (req, res) => {
     try {
         let query = `SELECT name FROM communities
         JOIN user_community_subscription ON communities.name = user_community_subscription.community_name
-        WHERE user_community_subscription.username = ?`;
+        WHERE status = 'active' AND user_community_subscription.username = ?`;
 
         const [community_subscription] = await pool.query(query, username);
         res.json(community_subscription);
@@ -470,26 +470,26 @@ FROM
 JOIN 
     communities c ON p.community = c.name -- Joining posts to communities
 JOIN 
-    user_community_subscription uc ON c.id = uc.community_id -- Joining communities to user subscriptions
+    user_community_subscription uc ON c.name = uc.community_name -- Joining communities to user subscriptions
 JOIN 
     users u ON uc.username = u.username -- Joining users to user subscriptions
 WHERE 
-    u.id = 1
+    u.username = ?
 	AND uc.status = 'active'; -- Ensuring the user's subscription is active
 `;
 
 
 app.get('/api/v1/home-feed', async (req, res) => {
-    var { userId } = req.query;
-    if (!userId) {
-        return res.status(400).json({ error: 'Search query is required' });
+    var { username } = req.query;
+    if (!username) {
+        return res.status(400).json({ error: 'user name is required by  this query' });
     }
     const connection = await pool.getConnection();
 
     try {
         // Construct and execute the search queries
         const [home_feed] = await connection.query(
-            home_feed_sql, [userId]
+            home_feed_sql, [username]
         );
 
         // Close the database connection
